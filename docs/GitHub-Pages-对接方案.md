@@ -157,9 +157,53 @@ Pages 上没有 `.env` 也没有服务端注入，**构建那一刻**就必须�
   run: npm run build
 ```
 
-- 未配置时前端走同源 `/api`（仅适用于本地 Vite 代理调试）；
 - 一份代码多环境：本地 `.env.local`、Pages 用 Variables、PR 预览可用另一套；
 - **不要把 API 地址硬编码进组件**，统一收敛在 `src/api/client.ts`。
+
+#### ⚠️ 实测踩坑：变量"配了但没生效"，页面请求同源 `github.io`
+
+这是本方案落地时**最容易发生、且最难排查**的一类故障，因为它**不报错**：
+
+- Vite 把 `VITE_API_BASE_URL` 在构建期内联进 JS。变量为空时，前端会**静默退回同源 `/api`**；
+- 构建成功、部署成功、Actions 全绿，但运行时所有请求打到 `https://<user>.github.io/api/...` → 404；
+- 典型误判："我在 deploy 日志里明明看到变量了" —— 那是 `deploy` job 的作用域，**不等于 `build` 读得到**。
+
+**根因是 GitHub Actions 变量有三级作用域**，且 `environment` 只在声明了该环境的 job 里生效：
+
+| 作用域 | 配置位置 | 谁能读到 |
+| --- | --- | --- |
+| Repository | Settings → Secrets and variables → Actions → Variables | 所有 job |
+| **Environment** | Settings → Environments → `github-pages` → Variables | **只有声明了 `environment: github-pages` 的 job** |
+| Organization | 组织级设置 | 所有 job（受策略约束） |
+
+原工作流只在 `deploy` job 写了 `environment: github-pages`，`build` 没写。
+于是变量若配在 **Environment** 作用域：deploy 读得到、build 读不到 → 产物里地址为空 → 请求同源。
+
+**修复（本项目已实施，三点缺一不可）：**
+
+```yaml
+jobs:
+  build:
+    environment:
+      name: github-pages          # ① build 也声明 environment，两种作用域都能读到
+    steps:
+      - name: Resolve API base
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+        run: |
+          node scripts/check-api-base.mjs   # ② 为空/非绝对地址 → 直接让构建失败
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ steps.api-base.outputs.api_base }}
+        run: npm run build
+```
+
+③ 运行时兜底：`src/api/client.ts` 检测到"公网域名 + 同源 base"时，在登录页直接展示
+「API 地址未注入」及修复指引，而不是抛一个语焉不详的 404。
+
+> **验收方式**：打开部署后的登录页，底部会显示 `当前 API: https://...`。
+> 若显示"同源 /api（本地代理）"，说明注入失败。也可在 DevTools Network 里看
+> `auth/login` 的真实请求域名。
 
 ### 5.4 CORS：后端必须显式放行 Pages 域名
 
@@ -223,6 +267,9 @@ Pages 上没有 `.env` 也没有服务端注入，**构建那一刻**就必须�
 3. **加工作流**：复制 `.github/workflows/deploy.yml`，按需改 Node 版本与构建命令。
 4. **配 `base`**：项目站点务必设置 `/<repo>/`（本仓库自动推断）。
 5. **配 API 地址**：Settings → Secrets and variables → Actions → **Variables** 新增 `VITE_API_BASE_URL`。
+   - 若配在 **Environment** 作用域（Environments → `github-pages` → Variables），
+     必须确认 `build` job **也**声明了 `environment: github-pages`，否则构建期读不到；
+   - 工作流已内置 `scripts/check-api-base.mjs`，变量为空会**直接让构建失败**，不会静默产出坏包。
 6. **配 CORS**：后端白名单加入 `https://<user>.github.io`（或自定义域名），并实现 `OPTIONS` 预检。
 7. **配 SPA 兜底**：非根路径路由必须提供 `404.html` 重定向方案，或改用 hash 路由。
 8. **配鉴权**：前端只持有 API 签发的 token，用 `Authorization` 头传递；禁止 Cookie 跨站方案。
@@ -322,6 +369,8 @@ npm run serve:pages   # → http://127.0.0.1:8080/pages-demo/
 | 数据 API | 浏览器实测 | 概览/订单正常，服务端分页筛选生效 ✅ |
 | CORS 预检 | `curl -X OPTIONS` | 放行任意 loopback 端口与 `*.github.io`，恶意来源 403 ✅ |
 | 部署形态 | `serve:pages` 模拟器 | 子路径可访问、深链接 404→兜底→路由生效、刷新保持登录 ✅ |
+| API 注入 | 检查产物 + 页面底部 | 产物含 `127.0.0.1:8787`，登录请求打到 8787 而非同源 ✅ |
+| 变量缺失 | `node scripts/check-api-base.mjs` | 空值/相对路径均 exit 1，不再静默降级 ✅ |
 | 错误路径 | 错误密码 / 无 token / 来源被拒 | 401/403 + 友好提示，不白屏 ✅ |
 | 控制台 | Playwright 采集 | 0 console error / 0 page error ✅ |
 

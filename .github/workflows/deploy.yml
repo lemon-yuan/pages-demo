@@ -32,6 +32,13 @@ jobs:
   build:
     name: Build & upload artifact
     runs-on: ubuntu-latest
+    # ★ 关键：build 必须也声明 environment，
+    #   否则配置在 Environment(github-pages) 作用域下的 Variables 读不到，
+    #   表现为「deploy 能读到、但构建产物里 API 地址为空 → 请求同源 github.io」。
+    environment:
+      name: github-pages
+    outputs:
+      api_base: ${{ steps.api-base.outputs.api_base }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,12 +52,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve API base
+        # vars（仓库/环境级 Variable）优先，其次 secrets，方便两种用法都能跑通
+        id: api-base
+        env:
+          FROM_VARS: ${{ vars.VITE_API_BASE_URL }}
+          FROM_SECRETS: ${{ secrets.VITE_API_BASE_URL }}
+          # 允许显式覆盖（例如临时指向本地 Mock）
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+        run: |
+          # 校验：为空 / 非绝对地址时直接失败，避免静默降级为同源 /api
+          node scripts/check-api-base.mjs
+          echo "api_base=$VITE_API_BASE_URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 构建参数"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| VITE_API_BASE_URL | \`${VITE_API_BASE_URL}\` |"
+            echo "| 来源 | $([ -n \"$FROM_VARS\" ] && echo 'Variables' || { [ -n \"$FROM_SECRETS\" ] && echo 'Secrets' || echo '未配置'; }) |"
+            echo "| 站点 base | 由 GITHUB_REPOSITORY 自动推断为 /${GITHUB_REPOSITORY#*/}/ |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build
         # npm run build = vue-tsc --noEmit && vite build（类型不过直接失败）
-        # 仓库里配置 Variable: VITE_API_BASE_URL = https://api.example.com
-        # 未配置时留空 → 前端走同源 /api（只适合本地代理调试）
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ steps.api-base.outputs.api_base }}
         run: npm run build
 
       - name: Configure Pages
@@ -78,4 +105,4 @@ jobs:
           echo "### 部署完成 :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- 站点地址：${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- API 地址：\`${{ vars.VITE_API_BASE_URL || '（未配置，走同源 /api）' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- API 地址：\`${{ needs.build.outputs.api_base }}\`" >> $GITHUB_STEP_SUMMARY

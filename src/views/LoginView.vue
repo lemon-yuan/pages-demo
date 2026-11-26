@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { ApiError } from '@/api/client'
+import { ApiError, apiBase, apiBaseProblem } from '@/api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +56,7 @@ onMounted(() => {
 
 <template>
   <div class="login">
+   <div class="login-wrap">
     <!-- 左：品牌叙事 -->
     <section class="login__aside">
       <div class="login__brand">
@@ -126,6 +127,13 @@ onMounted(() => {
           <p>使用演示账号体验鉴权链路（登录 → 签发 token → 携带 Bearer 调数据接口）</p>
         </header>
 
+        <!-- 构建期未注入 API 地址时，直接把原因和修复方式摆出来 -->
+        <div v-if="apiBaseProblem" class="config-error" role="alert">
+          <strong>{{ apiBaseProblem.title }}</strong>
+          <p>{{ apiBaseProblem.message }}</p>
+          <p class="config-error__hint">{{ apiBaseProblem.hint }}</p>
+        </div>
+
         <div class="field">
           <label for="email">邮箱</label>
           <input
@@ -191,20 +199,35 @@ onMounted(() => {
         </div>
 
         <p class="login-card__foot">
+          当前 API：<code class="mono">{{ apiBase || '同源 /api（本地代理）' }}</code><br />
           纯演示项目：账号密码硬编码在 Mock 服务内，<strong>请勿用于生产</strong>。
         </p>
       </form>
     </section>
+   </div>
   </div>
 </template>
 
 <style scoped>
 .login {
+  /* .app-shell 是 flex 容器：不加 flex:1 会被收缩成内容宽度，
+     导致整块内容贴左、右侧留白（见 .login-wrap 的居中逻辑） */
+  flex: 1;
+  min-width: 0;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: 40px;
-  padding: 48px clamp(24px, 5vw, 80px);
+  place-items: center;
+  padding: 48px clamp(24px, 4vw, 64px);
+}
+
+/* 承载左右两栏的定宽容器：限制最大宽度并水平居中，
+   避免「视口越宽、右侧留白越多」的视觉偏移 */
+.login-wrap {
+  width: 100%;
+  max-width: 1180px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(32px, 5vw, 72px);
   align-items: center;
 }
 
@@ -214,6 +237,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 32px;
   max-width: 560px;
+  justify-self: end;
   animation: fade-up 0.6s var(--ease-out) both;
 }
 
@@ -517,6 +541,38 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.config-error {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px;
+  border-radius: var(--radius-sm);
+  color: #ffd39b;
+  background: rgba(255, 180, 84, 0.1);
+  border: 1px solid rgba(255, 180, 84, 0.3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.config-error strong {
+  font-size: 12.5px;
+  color: #ffd39b;
+}
+
+.config-error__hint {
+  color: #c9b48c;
+  font-size: 11.5px;
+}
+
+.login-card__foot code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c7d3f0;
+}
+
 .login-card__foot {
   font-size: 11px;
   color: var(--text-muted);
@@ -531,13 +587,19 @@ onMounted(() => {
 
 @media (max-width: 1080px) {
   .login {
-    grid-template-columns: 1fr;
-    gap: 32px;
     padding: 32px 20px 48px;
+    align-items: start;
+  }
+
+  .login-wrap {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+    max-width: 520px;
   }
 
   .login__aside {
     max-width: none;
+    justify-self: stretch;
     gap: 24px;
   }
 

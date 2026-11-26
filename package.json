@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "server": "node server/index.mjs",
-    "serve:pages": "node scripts/serve-pages-emulation.mjs --port 8080 --repo pages-demo"
+    "serve:pages": "node scripts/serve-pages-emulation.mjs --port 8080 --repo pages-demo",
+    "check:api-base": "node scripts/check-api-base.mjs"
   },
   "dependencies": {
     "vue": "^3.5.46",

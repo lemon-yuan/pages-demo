@@ -6,6 +6,10 @@
  *    所以这里的前端必须显式指向一个外部 API 地址。
  * 2. 地址来自 `VITE_API_BASE_URL`（构建期注入），本地开发留空走 Vite 代理。
  * 3. token 只放内存 + localStorage（demo 简化），请求时带 Authorization: Bearer。
+ *
+ * ⚠️ 最容易踩的坑：VITE_API_BASE_URL 没注入成功时，前端会"安静地"退回同源
+ *    /api，部署到 Pages 后请求就打到 https://<user>.github.io/api/... → 404。
+ *    因此这里对"线上环境 + 同源 base"的组合主动报错，而不是让它静默失败。
  */
 import type {
   ApiEnvelope,
@@ -18,11 +22,7 @@ import { logRequest } from '@/composables/useRequestLog'
 
 const TOKEN_KEY = 'nebula.token'
 
-/**
- * 解析 API 根地址：
- * - 配置了 VITE_API_BASE_URL（如 https://api.example.com 或 http://127.0.0.1:8787）→ 直接用
- * - 否则用相对路径 ""，交给 Vite dev server / preview 的 /api 代理
- */
+/** 解析 API 根地址：配置了就用，否则空字符串（走同源 /api 代理） */
 export function resolveApiBase(): string {
   const configured = (import.meta.env.VITE_API_BASE_URL || '').trim()
   if (configured) return configured.replace(/\/+$/, '')
@@ -31,6 +31,26 @@ export function resolveApiBase(): string {
 
 export const apiBase = resolveApiBase()
 export const apiBaseIsAbsolute = /^https?:\/\//i.test(apiBase)
+
+const isDev = import.meta.env.DEV
+const isLoopback =
+  typeof location !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+
+/**
+ * 配置错误：构建产物部署在公网、却没有任何 API 地址。
+ * 这不是运行时故障，而是"构建期变量没传进来"，需要给出明确指引。
+ */
+export const apiBaseMisconfigured = !isDev && !apiBaseIsAbsolute && !isLoopback
+
+export const apiBaseProblem = apiBaseMisconfigured
+  ? {
+      title: 'API 地址未注入',
+      message:
+        '构建产物里没有 VITE_API_BASE_URL，前端正尝试请求同源 /api（GitHub Pages 上不存在该接口）。',
+      hint: '请在仓库 Settings → Secrets and variables → Actions → Variables 配置 VITE_API_BASE_URL=https://你的API域名，然后重新运行工作流。',
+    }
+  : null
 
 export class ApiError extends Error {
   code: string
@@ -115,10 +135,28 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
     if (!response.ok || !payload || payload.success === false) {
       const code = payload?.error?.code || `HTTP_${response.status}`
-      const message = payload?.error?.message || `请求失败（HTTP ${response.status}）`
+      let message = payload?.error?.message || `请求失败（HTTP ${response.status}）`
+
+      // 同源 404 + 未注入地址 = 几乎必然是构建变量缺失，给出精准提示
+      if (apiBaseMisconfigured && response.status === 404) {
+        message = `接口 404：请求打到了同源 ${location.origin}${path}。原因是构建时未注入 VITE_API_BASE_URL。`
+      }
+      // 网络层拦截（CORS / 混合内容）会先经过这里
       throw new ApiError(response.status, code, message)
     }
     return payload.data
+  } catch (error) {
+    // fetch 抛 TypeError 通常是网络层被拦（CORS 预检失败 / 混合内容）
+    if (error instanceof TypeError && !(error instanceof ApiError)) {
+      throw new ApiError(
+        0,
+        'NETWORK_ERROR',
+        apiBaseIsAbsolute
+          ? `无法连接 API（${apiBase}）：可能是跨域被拒、服务未启动，或 HTTPS 页面请求了 HTTP 接口。`
+          : '无法连接 API：当前为同源模式，需要本地启动 Mock 服务并配置 VITE_API_BASE_URL。',
+      )
+    }
+    throw error
   } finally {
     logRequest({
       method,
@@ -150,7 +188,8 @@ export const api = {
       note: '登录',
     }),
 
-  me: (signal?: AbortSignal) => request<{ user: User; expiresAt: number }>('/auth/me', { signal, note: '恢复会话' }),
+  me: (signal?: AbortSignal) =>
+    request<{ user: User; expiresAt: number }>('/auth/me', { signal, note: '恢复会话' }),
 
   logout: () => request<{ loggedOut: boolean }>('/auth/logout', { method: 'POST', note: '登出' }),
 

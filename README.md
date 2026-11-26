@@ -76,6 +76,9 @@ http://127.0.0.1:8080/pages-demo/orders （会先 404 → 404.html 兜底 → �
 2. **Settings → Pages → Source** 选择 **GitHub Actions**。
 3. **Settings → Secrets and variables → Actions → Variables** 新增：
    - `VITE_API_BASE_URL` = 你的 API 地址（例如 `https://api.example.com`）
+   - 该变量在**构建期**被内联进 JS，改了变量必须**重新运行工作流**才生效
+   - 若配在 **Environment** 作用域（Environments → `github-pages`），`build` job 已声明同名
+     `environment`，可直接读取（此前缺这一步会导致变量读不到、前端退回同源 `github.io`）
 4. push 到 `main`，等待 `Deploy to GitHub Pages` 工作流完成。
 5. 访问 `https://<user>.github.io/<repo>/`。
 
@@ -124,6 +127,7 @@ pages-demo/
 | 项目站点子路径导致白屏 | `base` 由 `GITHUB_REPOSITORY` 自动推断为 `/<repo>/` |
 | SPA 深链接 404 | 构建期生成 `dist/404.html`，把路径编码进 `?__spa__=` 后跳回并还原 |
 | API 地址从哪来 | 构建期注入 `VITE_API_BASE_URL`（Actions Variables），统一收敛在 `api/client.ts` |
+| 变量没注入时不静默失败 | `scripts/check-api-base.mjs` 让 CI 直接失败；运行时在登录页提示「API 地址未注入」 |
 | 跨域鉴权 | `Authorization: Bearer`，**不用 Cookie**，规避 SameSite 问题 |
 | `OPTIONS` 预检 | 在业务逻辑之前返回 204，不要求鉴权 |
 | Chrome 私有网络访问 | 响应头带 `Access-Control-Allow-Private-Network: true` |
@@ -145,6 +149,7 @@ pages-demo/
 | `npm run preview` | 预览生产构建（4173） |
 | `npm run serve:pages` | 模拟 GitHub Pages 托管（8080，子路径 + 404 兜底） |
 | `npm run typecheck` | 仅类型检查 |
+| `npm run check:api-base` | 校验 `VITE_API_BASE_URL` 是否可用（CI 用） |
 
 ## 参考
 
