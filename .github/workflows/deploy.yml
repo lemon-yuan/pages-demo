@@ -1,0 +1,81 @@
+# 构建 Vite 产物并发布到 GitHub Pages
+#
+# 触发：push 到 main / 手动运行
+# 前提：仓库 Settings → Pages → Build and deployment → Source = "GitHub Actions"
+#
+# 关键点：
+#  1. base 路径：vite.config.ts 读取 GITHUB_REPOSITORY 自动推断 "/<repo>/"，
+#     因此项目站点（https://<user>.github.io/<repo>/）不会出现资源 404 白屏。
+#  2. API 地址：通过仓库 Variables / Secrets 注入 VITE_API_BASE_URL，
+#     使同一份代码可以指向本地 Mock API 或线上真实 API。
+#  3. 权限：pages: write + id-token: write 是 deploy-pages 的硬性要求。
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 允许 GITHUB_TOKEN 部署到 Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只保留一个 Pages 部署；不取消进行中的任务，避免线上出现半成品
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & upload artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        # npm run build = vue-tsc --noEmit && vite build（类型不过直接失败）
+        # 仓库里配置 Variable: VITE_API_BASE_URL = https://api.example.com
+        # 未配置时留空 → 前端走同源 /api（只适合本地代理调试）
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Summary
+        run: |
+          echo "### 部署完成 :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 站点地址：${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- API 地址：\`${{ vars.VITE_API_BASE_URL || '（未配置，走同源 /api）' }}\`" >> $GITHUB_STEP_SUMMARY

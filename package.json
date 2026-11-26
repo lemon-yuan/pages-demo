@@ -1,0 +1,30 @@
+{
+  "name": "pages-demo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "GitHub Pages 静态托管 + Vite/Vue3/TypeScript 前端 + 本地 Mock API 的架构演示",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "build:only": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "server": "node server/index.mjs",
+    "serve:pages": "node scripts/serve-pages-emulation.mjs --port 8080 --repo pages-demo"
+  },
+  "dependencies": {
+    "vue": "^3.5.46",
+    "vue-router": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "@vitejs/plugin-vue": "^6.0.11",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.8",
+    "vue-tsc": "^3.3.14"
+  }
+}

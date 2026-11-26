@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>页面跳转中…</title>
+    <meta name="robots" content="noindex" />
+    <script>
+      /*
+       * GitHub Pages 的 SPA 兜底页（构建期由 vite 插件生成，勿直接部署本模板）
+       *
+       * 背景：Pages 是纯静态托管，没有 rewrite 规则。访问 /repo/orders 时，
+       *      服务器找不到该文件 → 返回仓库里的 404.html（HTTP 404）。
+       * 做法：在 404.html 里把原始路径写进 ?__spa__=，再跳回 index.html，
+       *      由 index.html 里的引导脚本用 history.replaceState 还原真实 URL。
+       *      这样刷新/直接访问深链接都能正确进入 SPA 路由。
+       *
+       * 路径深度由 Vite 插件按 base 注入：项目站点 1，用户/组织站点 0。
+       */
+      ;(function () {
+        var SEGMENTS = __SEGMENTS__
+        var l = window.location
+        var parts = l.pathname.split('/').slice(1)
+        var keep = parts.slice(0, SEGMENTS).join('/')
+        var rest = '/' + parts.slice(SEGMENTS).join('/')
+        var prefix = '/' + (keep ? keep + '/' : '')
+        var target = rest + l.search + l.hash
+        l.replace(prefix + '?__spa__=' + encodeURIComponent(target))
+      })()
+    </script>
+  </head>
+  <body>
+    <p style="font-family: system-ui; color: #94a3b8">正在跳转…</p>
+  </body>
+</html>

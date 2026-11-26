@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nebula Console —— GitHub Pages 静态托管 + Vite/Vue3/TypeScript 前端 + 本地 Mock API 的架构演示"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Nebula Console · GitHub Pages 架构演示</title>
+    <script>
+      /*
+       * GitHub Pages 的 SPA 深链接还原：
+       * 404.html 把原始路径塞进 ?__spa__=…，这里把它还原成真实 URL，
+       * 避免路由拿到 "/?__spa__=%2Forders" 这种奇怪路径。
+       */
+      ;(function () {
+        try {
+          var url = new URL(window.location.href)
+          var spa = url.searchParams.get('__spa__')
+          if (!spa) return
+          var next = new URL(spa.replace(/^\/+/, ''), document.baseURI)
+          window.history.replaceState(null, '', next.pathname + next.search + next.hash)
+        } catch (e) {
+          /* 忽略：最坏情况退回首页 */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
